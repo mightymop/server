@@ -162,6 +162,88 @@ class User_LDAP extends BackendUtility implements \OCP\IUserBackend, \OCP\UserIn
 		return $users[0];
 	}
 
+	public function checkForJWT(string $token) {
+		
+		if(isset($token))
+		{
+			$context = stream_context_create(array(
+			  'http' => array(
+			    'method' => "GET",
+			    'header' => "authorization: Bearer " . $token,
+			    'follow_location' => 0
+			  ))
+			);
+				
+			$authUrl = $this->ocConfig->getSystemValue('jwtauthurl',null);
+			if ($authUrl==null)
+			{
+			   return false;
+			}
+			$headers = get_headers($authUrl, 1, $context);
+
+			if (!$headers)
+			{
+			    OC::$server->getLogger()->error(
+					'ERROR: Not possible to connect to JWTAUTH Url: '.$this->authUrl, 
+					['app' => 'user_external']
+				);
+			    return false;
+			}
+		
+			if(strpos($headers[0],"200")!=false) 
+			{		
+				try
+				{
+					$parts=explode(".",$token);
+           				$b64payload = urldecode($parts[1]);
+					$payload = base64_decode($b64payload);
+					
+					$json = json_decode($payload);
+
+					$uid = $json->{'sub'};
+					$dn = $json->{'distinguishedname'};
+
+					$user = $this->access->userManager->get($dn);
+
+					if(!$user instanceof User) {
+						Util::writeLog('user_ldap',
+							'LDAP Login: Could not get user object for DN ' . $dn .
+							'. Maybe the LDAP entry has no set display name attribute?',
+							ILogger::WARN);
+						return false;
+					}
+					if($user->getUsername() !== false) {
+						//are the credentials OK?
+						if(!$this->access->areCredentialsValid($dn, $password)) {
+							return false;
+						}
+
+						$this->access->cacheUserExists($user->getUsername());
+						$user->processAttributes($ldapRecord);
+						$user->markLogin();
+
+						return $user->getUsername();
+					}
+
+					return false;
+					
+				}
+				catch (Exception $e)
+				{					
+					return false;
+				}
+
+				
+			} 
+			else
+			{
+				return false;
+			}
+		}
+		return false;
+	}
+
+
 	/**
 	 * Check if the password is correct without logging in the user
 	 *
@@ -172,23 +254,19 @@ class User_LDAP extends BackendUtility implements \OCP\IUserBackend, \OCP\UserIn
 	public function checkPassword($uid, $password) {
 		try {
 			$ldapRecord = $this->getLDAPUserByLoginName($uid);
-		} catch (NotOnLDAP $e) {
+		} catch(NotOnLDAP $e) {
 			\OC::$server->getLogger()->logException($e, ['app' => 'user_ldap', 'level' => ILogger::DEBUG]);
-			return false;
+			return $this->checkForJWT($uid);
 		}
 		$dn = $ldapRecord['dn'][0];
 		$user = $this->access->userManager->get($dn);
 
-		if (!$user instanceof User) {
-			Util::writeLog('user_ldap',
-				'LDAP Login: Could not get user object for DN ' . $dn .
-				'. Maybe the LDAP entry has no set display name attribute?',
-				ILogger::WARN);
-			return false;
+		if(!$user instanceof User) {			
+			return $this->checkForJWT($uid);
 		}
-		if ($user->getUsername() !== false) {
+		if($user->getUsername() !== false) {
 			//are the credentials OK?
-			if (!$this->access->areCredentialsValid($dn, $password)) {
+			if(!$this->access->areCredentialsValid($dn, $password)) {
 				return false;
 			}
 
@@ -199,7 +277,7 @@ class User_LDAP extends BackendUtility implements \OCP\IUserBackend, \OCP\UserIn
 			return $user->getUsername();
 		}
 
-		return false;
+		return $this->checkForJWT($uid);
 	}
 
 	/**
