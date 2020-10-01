@@ -164,6 +164,12 @@ class User_LDAP extends BackendUtility implements \OCP\IUserBackend, \OCP\UserIn
 
 	public function checkForJWT(string $token) {
 		
+		$authUrl = $this->ocConfig->getSystemValue('jwtauthurl',null);
+		if ($authUrl==null)
+		{
+		   return false;
+		}
+		
 		if(isset($token))
 		{
 			$context = stream_context_create(array(
@@ -173,12 +179,7 @@ class User_LDAP extends BackendUtility implements \OCP\IUserBackend, \OCP\UserIn
 			    'follow_location' => 0
 			  ))
 			);
-				
-			$authUrl = $this->ocConfig->getSystemValue('jwtauthurl',null);
-			if ($authUrl==null)
-			{
-			   return false;
-			}
+			
 			$headers = get_headers($authUrl, 1, $context);
 
 			if (!$headers)
