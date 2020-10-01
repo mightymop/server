@@ -185,8 +185,8 @@ class User_LDAP extends BackendUtility implements \OCP\IUserBackend, \OCP\UserIn
 			if (!$headers)
 			{
 			    OC::$server->getLogger()->error(
-					'ERROR: Not possible to connect to JWTAUTH Url: '.$this->authUrl, 
-					['app' => 'user_external']
+					'ERROR: Not possible to connect to JWTAUTH Url: '.$authUrl, 
+					['app' => 'user_ldap']
 				);
 			    return false;
 			}
@@ -196,7 +196,7 @@ class User_LDAP extends BackendUtility implements \OCP\IUserBackend, \OCP\UserIn
 				try
 				{
 					$parts=explode(".",$token);
-           				$b64payload = urldecode($parts[1]);
+           			$b64payload = urldecode($parts[1]);
 					$payload = base64_decode($b64payload);
 					
 					$json = json_decode($payload);
@@ -214,12 +214,9 @@ class User_LDAP extends BackendUtility implements \OCP\IUserBackend, \OCP\UserIn
 						return false;
 					}
 					if($user->getUsername() !== false) {
-						//are the credentials OK?
-						if(!$this->access->areCredentialsValid($dn, $password)) {
-							return false;
-						}
-
+						
 						$this->access->cacheUserExists($user->getUsername());
+						$ldapRecord = $this->getLDAPUserByLoginName($uid);
 						$user->processAttributes($ldapRecord);
 						$user->markLogin();
 
